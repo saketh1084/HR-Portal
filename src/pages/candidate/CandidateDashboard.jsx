@@ -7,12 +7,14 @@ import ApplicationTracking from "../../components/candidate/ApplicationTracking"
 import Notifications from "../../components/candidate/Notifications";
 import Chatbot from "../../components/candidate/Chatbot";
 import ResumeUpload from "../../components/candidate/ResumeUpload";
+import ProfilePage from "../../components/candidate/ProfilePage";
 
 const CandidateDashboard = () => {
   return (
     <CandidateLayout>
       <Routes>
         <Route path="/" element={<JobListings />} />
+        <Route path="/profile" element={<ProfilePage />} />
         <Route path="/search" element={<JobSearch />} />
         <Route path="/job/:id" element={<JobDetail />} />
         <Route path="/applications" element={<ApplicationTracking />} />
