@@ -1,69 +1,66 @@
 import { useState, useEffect } from "react";
 import { FaCheckCircle, FaEye, FaUserCheck, FaTimesCircle, FaClock, FaFileAlt } from "react-icons/fa";
 import { Link } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
+import { getApplications, getJob } from "../../api/client";
 
 const ApplicationTracking = () => {
+  const { user } = useAuth();
   const [applications, setApplications] = useState([]);
-  const [filter, setFilter] = useState("all"); // all, applied, viewed, shortlisted, rejected
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("all");
 
   useEffect(() => {
-    // Load applications from localStorage
-    const savedApplications = JSON.parse(localStorage.getItem("applications") || "[]");
-    
-    // Add mock data if empty
-    if (savedApplications.length === 0) {
-      const mockApplications = [
-        {
-          id: 1,
-          jobId: 1,
-          jobTitle: "Senior Full Stack Developer",
-          company: "Tech Corp",
-          appliedAt: "2024-01-15T10:30:00Z",
-          status: "shortlisted",
-          lastUpdated: "2024-01-16T14:20:00Z",
-        },
-        {
-          id: 2,
-          jobId: 2,
-          jobTitle: "React Developer",
-          company: "StartupXYZ",
-          appliedAt: "2024-01-20T09:15:00Z",
-          status: "viewed",
-          lastUpdated: "2024-01-21T11:45:00Z",
-        },
-        {
-          id: 3,
-          jobId: 3,
-          jobTitle: "Frontend Engineer",
-          company: "Design Co",
-          appliedAt: "2024-01-18T16:00:00Z",
-          status: "applied",
-          lastUpdated: "2024-01-18T16:00:00Z",
-        },
-        {
-          id: 4,
-          jobId: 4,
-          jobTitle: "Backend Developer",
-          company: "Cloud Systems",
-          appliedAt: "2024-01-10T12:00:00Z",
-          status: "rejected",
-          lastUpdated: "2024-01-12T10:30:00Z",
-        },
-      ];
-      localStorage.setItem("applications", JSON.stringify(mockApplications));
-      setApplications(mockApplications);
-    } else {
-      setApplications(savedApplications);
+    if (!user?.id) {
+      setApplications([]);
+      setLoading(false);
+      return;
     }
-  }, []);
+    setLoading(true);
+    getApplications(user.id)
+      .then(async (res) => {
+        const list = res.applications || res || [];
+        const withTitles = await Promise.all(
+          list.map(async (app) => {
+            try {
+              const job = await getJob(app.job_id);
+              return {
+                id: app.id,
+                jobId: app.job_id,
+                jobTitle: job?.title || "Job",
+                company: "Company",
+                appliedAt: app.applied_at,
+                lastUpdated: app.updated_at || app.applied_at,
+                status: app.status,
+              };
+            } catch {
+              return {
+                id: app.id,
+                jobId: app.job_id,
+                jobTitle: "Job",
+                company: "—",
+                appliedAt: app.applied_at,
+                lastUpdated: app.updated_at || app.applied_at,
+                status: app.status,
+              };
+            }
+          })
+        );
+        setApplications(withTitles);
+      })
+      .catch(() => setApplications([]))
+      .finally(() => setLoading(false));
+  }, [user?.id]);
 
   const getStatusIcon = (status) => {
     switch (status) {
       case "applied":
         return <FaClock className="text-blue-500" />;
       case "viewed":
+      case "interview":
         return <FaEye className="text-purple-500" />;
       case "shortlisted":
+      case "offered":
         return <FaUserCheck className="text-green-500" />;
       case "rejected":
         return <FaTimesCircle className="text-red-500" />;
@@ -77,8 +74,10 @@ const ApplicationTracking = () => {
       case "applied":
         return "bg-blue-100 text-blue-800";
       case "viewed":
+      case "interview":
         return "bg-purple-100 text-purple-800";
       case "shortlisted":
+      case "offered":
         return "bg-green-100 text-green-800";
       case "rejected":
         return "bg-red-100 text-red-800";
@@ -99,23 +98,34 @@ const ApplicationTracking = () => {
   const filteredApplications =
     filter === "all"
       ? applications
-      : applications.filter((app) => app.status === filter);
+      : filter === "viewed"
+        ? applications.filter((app) => app.status === "viewed" || app.status === "interview")
+        : filter === "shortlisted"
+          ? applications.filter((app) => app.status === "shortlisted" || app.status === "offered")
+          : applications.filter((app) => app.status === filter);
 
   const stats = {
     total: applications.length,
     applied: applications.filter((a) => a.status === "applied").length,
-    viewed: applications.filter((a) => a.status === "viewed").length,
-    shortlisted: applications.filter((a) => a.status === "shortlisted").length,
+    viewed: applications.filter((a) => a.status === "viewed" || a.status === "interview").length,
+    shortlisted: applications.filter((a) => a.status === "shortlisted" || a.status === "offered").length,
     rejected: applications.filter((a) => a.status === "rejected").length,
   };
 
   const withdrawApplication = (id) => {
     if (window.confirm("Are you sure you want to withdraw this application?")) {
-      const updated = applications.filter((app) => app.id !== id);
-      setApplications(updated);
-      localStorage.setItem("applications", JSON.stringify(updated));
+      setApplications((prev) => prev.filter((app) => app.id !== id));
+      // API does not have withdraw endpoint; we only update local state
     }
   };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600" />
+      </div>
+    );
+  }
 
   return (
     <div>

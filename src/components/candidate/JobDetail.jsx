@@ -8,12 +8,12 @@ import {
   FaBuilding,
   FaStar,
   FaCheck,
-  FaTimes,
   FaBookmark,
   FaShare,
   FaLaptopCode,
 } from "react-icons/fa";
-import { getJobById } from "../../data/jobs";
+import { useAuth } from "../../context/AuthContext";
+import { getJob, getApplications, applyToJob, getCompany, mapJobToCard } from "../../api/client";
 
 // Category tag color for job detail
 const categoryTagColors = {
@@ -27,69 +27,80 @@ const categoryTagColors = {
 const JobDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [job, setJob] = useState(null);
   const [company, setCompany] = useState(null);
   const [applied, setApplied] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [applying, setApplying] = useState(false);
 
   useEffect(() => {
-    // Fetch job from shared data
-    const foundJob = getJobById(id);
-
-    if (foundJob) {
-      setJob(foundJob);
-      setCompany(foundJob.companyInfo);
-    } else {
-      // Fallback if job not found
-      setJob({
-        id: parseInt(id),
-        title: "Job Not Found",
-        company: "Unknown",
-        location: "N/A",
-        type: "N/A",
-        salary: "N/A",
-        posted: "N/A",
-        workMode: "N/A",
-        experience: "N/A",
-        category: "N/A",
-        description: "This job listing could not be found.",
-        requiredSkills: [],
-        benefits: [],
+    if (!id) return;
+    getJob(id)
+      .then((raw) => {
+        const card = mapJobToCard(raw, raw.company_id || "Company");
+        setJob({ ...card, requiredSkills: raw.skills_required || [], benefits: [] });
+        if (raw.company_id) {
+          return getCompany(raw.company_id).then((co) => {
+            setCompany(co ? {
+              name: co.name || "Company",
+              size: co.size || "N/A",
+              industry: co.industry || "N/A",
+              founded: co.founded || "N/A",
+              website: co.website || "N/A",
+              rating: 0,
+              reviews: 0,
+              description: co.description || "",
+              culture: [],
+            } : null);
+          });
+        }
+        setCompany(null);
+      })
+      .catch(() => {
+        setJob({
+          id,
+          title: "Job Not Found",
+          company: "Unknown",
+          location: "N/A",
+          type: "N/A",
+          salary: "N/A",
+          posted: "N/A",
+          workMode: "N/A",
+          experience: "N/A",
+          category: "N/A",
+          description: "This job could not be found.",
+          requiredSkills: [],
+          benefits: [],
+        });
+        setCompany(null);
       });
-      setCompany({
-        name: "Unknown",
-        size: "N/A",
-        industry: "N/A",
-        founded: "N/A",
-        website: "N/A",
-        rating: 0,
-        reviews: 0,
-        description: "Company information not available.",
-        culture: [],
-      });
-    }
-
-    // Check if already applied or saved
-    const applications = JSON.parse(localStorage.getItem("applications") || "[]");
-    const savedJobs = JSON.parse(localStorage.getItem("savedJobs") || "[]");
-    setApplied(applications.some((a) => a.jobId === parseInt(id)));
-    setSaved(savedJobs.some((j) => j.id === parseInt(id)));
   }, [id]);
 
-  const handleApply = () => {
-    const applications = JSON.parse(localStorage.getItem("applications") || "[]");
-    const newApplication = {
-      id: Date.now(),
-      jobId: job.id,
-      jobTitle: job.title,
-      company: job.company,
-      appliedAt: new Date().toISOString(),
-      status: "applied",
-    };
-    applications.push(newApplication);
-    localStorage.setItem("applications", JSON.stringify(applications));
-    setApplied(true);
-    alert("Application submitted successfully!");
+  useEffect(() => {
+    if (!user?.id || !id) return;
+    getApplications(user.id)
+      .then((r) => {
+        const list = r.applications || r || [];
+        setApplied(list.some((a) => a.job_id === id));
+      })
+      .catch(() => {});
+    const savedJobs = JSON.parse(localStorage.getItem("savedJobs") || "[]");
+    setSaved(savedJobs.some((j) => String(j.id) === String(id)));
+  }, [user?.id, id]);
+
+  const handleApply = async () => {
+    if (!job || applied || applying) return;
+    setApplying(true);
+    try {
+      await applyToJob(id, "");
+      setApplied(true);
+      alert("Application submitted successfully!");
+    } catch (err) {
+      alert(err.response?.data?.detail || "Failed to apply");
+    } finally {
+      setApplying(false);
+    }
   };
 
   const handleSaveJob = () => {
@@ -179,7 +190,7 @@ const JobDetail = () => {
         <div className="flex gap-4">
           <button
             onClick={handleApply}
-            disabled={applied}
+            disabled={applied || applying}
             className={`flex-1 px-6 py-3 rounded-lg font-medium transition-colors ${
               applied
                 ? "bg-green-600 text-white"
@@ -191,6 +202,8 @@ const JobDetail = () => {
                 <FaCheck className="inline mr-2" />
                 Applied
               </>
+            ) : applying ? (
+              "Applying..."
             ) : (
               "Apply Now"
             )}

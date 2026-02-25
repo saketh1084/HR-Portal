@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { FaSearch, FaMapMarkerAlt, FaBriefcase, FaDollarSign, FaFilter, FaBookmark } from "react-icons/fa";
 import { Link } from "react-router-dom";
+import { searchJobs, mapJobToCard } from "../../api/client";
 
 const JobSearch = () => {
   const [searchQuery, setSearchQuery] = useState("");
@@ -13,74 +14,46 @@ const JobSearch = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [searchResults, setSearchResults] = useState([]);
   const [savedSearches, setSavedSearches] = useState([]);
+  const [searching, setSearching] = useState(false);
 
-  const handleSearch = () => {
-    // Simulate search results with filters
-    const mockResults = [
-      {
-        id: 1,
-        title: "Senior Full Stack Developer",
-        company: "Tech Corp",
-        location: "San Francisco, CA",
-        type: "Full-time",
-        salary: "$120k - $150k",
-        posted: "2 days ago",
-        experience: "5-8 years",
-        workMode: "Hybrid",
-        skills: ["React", "Node.js", "MongoDB"],
-      },
-      {
-        id: 2,
-        title: "React Developer",
-        company: "StartupXYZ",
-        location: "Remote",
-        type: "Full-time",
-        salary: "$90k - $120k",
-        posted: "5 days ago",
-        experience: "2-5 years",
-        workMode: "Remote",
-        skills: ["React", "JavaScript", "TypeScript"],
-      },
-      {
-        id: 3,
-        title: "Frontend Engineer",
-        company: "Design Co",
-        location: "New York, NY",
-        type: "Contract",
-        salary: "$80k - $100k",
-        posted: "1 week ago",
-        experience: "3-5 years",
-        workMode: "On-site",
-        skills: ["Vue.js", "CSS", "HTML"],
-      },
-    ];
-
-    // Apply filters
-    let filtered = mockResults;
-    if (location) {
-      filtered = filtered.filter((job) =>
-        job.location.toLowerCase().includes(location.toLowerCase())
-      );
+  const handleSearch = async () => {
+    setSearching(true);
+    try {
+      const params = {};
+      if (searchQuery) params.keyword = searchQuery;
+      if (location) params.location = location;
+      if (jobType) params.employment_type = jobType;
+      if (experienceLevel) params.experience_level = experienceLevel;
+      if (workMode) params.employment_type = workMode || params.employment_type;
+      if (salaryRange) {
+        const [min, max] = salaryRange.split("-").map((x) => parseInt(x, 10));
+        if (!isNaN(min)) params.salary_min = min;
+        if (max && !isNaN(max)) params.salary_max = max;
+      }
+      const data = await searchJobs(params);
+      const list = data.jobs || data.results || data || [];
+      let mapped = Array.isArray(list) ? list.map((j) => mapJobToCard(j)) : [];
+      if (sortBy === "date") {
+        mapped = [...mapped].sort((a, b) => (b.posted || "").localeCompare(a.posted || ""));
+      } else if (sortBy === "salary-high") {
+        mapped = [...mapped].sort((a, b) => {
+          const aNum = parseInt(String(a.salary).replace(/\D/g, ""), 10) || 0;
+          const bNum = parseInt(String(b.salary).replace(/\D/g, ""), 10) || 0;
+          return bNum - aNum;
+        });
+      } else if (sortBy === "salary-low") {
+        mapped = [...mapped].sort((a, b) => {
+          const aNum = parseInt(String(a.salary).replace(/\D/g, ""), 10) || 0;
+          const bNum = parseInt(String(b.salary).replace(/\D/g, ""), 10) || 0;
+          return aNum - bNum;
+        });
+      }
+      setSearchResults(mapped);
+    } catch {
+      setSearchResults([]);
+    } finally {
+      setSearching(false);
     }
-    if (jobType) {
-      filtered = filtered.filter((job) => job.type.toLowerCase() === jobType.toLowerCase());
-    }
-    if (workMode) {
-      filtered = filtered.filter((job) => job.workMode.toLowerCase() === workMode.toLowerCase());
-    }
-
-    // Apply sorting
-    if (sortBy === "date") {
-      filtered.sort((a, b) => (a.posted.includes("day") ? -1 : 1));
-    } else if (sortBy === "salary-high") {
-      filtered.sort((a, b) => {
-        const aSalary = parseInt(a.salary.match(/\d+/)?.[0] || 0);
-        const bSalary = parseInt(b.salary.match(/\d+/)?.[0] || 0);
-        return bSalary - aSalary;
-      });
-    }
-
-    setSearchResults(filtered);
   };
 
   const saveSearch = () => {
@@ -136,9 +109,10 @@ const JobSearch = () => {
           </div>
           <button
             onClick={handleSearch}
-            className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+            disabled={searching}
+            className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-70"
           >
-            Search
+            {searching ? "Searching..." : "Search"}
           </button>
           <button
             onClick={saveSearch}
@@ -282,7 +256,12 @@ const JobSearch = () => {
 
       {/* Search Results */}
       <div className="space-y-4">
-        {searchResults.length === 0 ? (
+        {searching ? (
+          <div className="bg-white rounded-lg shadow-md p-12 text-center">
+            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary-600 mx-auto mb-2" />
+            <p className="text-gray-500">Searching...</p>
+          </div>
+        ) : searchResults.length === 0 ? (
           <div className="bg-white rounded-lg shadow-md p-12 text-center">
             <p className="text-gray-500">No jobs found. Try adjusting your filters.</p>
           </div>

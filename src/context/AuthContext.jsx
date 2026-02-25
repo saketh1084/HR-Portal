@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect } from "react";
 import { jwtDecode } from "jwt-decode";
 import toast from "react-hot-toast";
+import * as api from "../api/client";
 
 const AuthContext = createContext();
 
@@ -15,152 +16,132 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [token, setToken] = useState(localStorage.getItem("token"));
-
-  // Helper function to create a mock JWT token
-  const createMockJWT = (payload) => {
-    const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-    const encodedPayload = btoa(JSON.stringify(payload));
-    const signature = btoa("mock-signature");
-    return `${header}.${encodedPayload}.${signature}`;
-  };
+  const token = localStorage.getItem("access_token") || localStorage.getItem("token");
 
   useEffect(() => {
     if (token) {
       try {
-        // Check if it's a valid JWT format (has 3 parts)
         if (token.split(".").length === 3) {
           const decoded = jwtDecode(token);
-          setUser(decoded);
+          if (decoded.exp && decoded.exp * 1000 < Date.now()) {
+            localStorage.removeItem("access_token");
+            localStorage.removeItem("refresh_token");
+            localStorage.removeItem("token");
+            setUser(null);
+          } else {
+            setUser({
+              id: decoded.user_id,
+              email: decoded.email,
+              role: decoded.role,
+            });
+          }
         } else {
-          // If it's an old format token, clear it
+          localStorage.removeItem("access_token");
+          localStorage.removeItem("refresh_token");
           localStorage.removeItem("token");
-          setToken(null);
+          setUser(null);
         }
-      } catch (error) {
+      } catch {
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("refresh_token");
         localStorage.removeItem("token");
-        setToken(null);
+        setUser(null);
       }
+    } else {
+      setUser(null);
     }
     setLoading(false);
   }, [token]);
 
   const login = async (email, password) => {
     try {
-      // Simulate API call - replace with actual API endpoint
-      const response = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+      const data = await api.login(email, password);
+      const access = data.access_token;
+      const refresh = data.refresh_token;
+      localStorage.setItem("access_token", access);
+      if (refresh) localStorage.setItem("refresh_token", refresh);
+      localStorage.setItem("token", access);
+      const decoded = jwtDecode(access);
+      setUser({
+        id: decoded.user_id,
+        email: decoded.email,
+        role: decoded.role,
       });
-
-      // For demo purposes, create a mock token
-      if (email && password) {
-        const payload = {
-          id: Date.now(),
-          email,
-          role: email.includes("admin") ? "admin" : "candidate",
-          exp: Math.floor(Date.now() / 1000) + 86400, // 24 hours in seconds
-        };
-        const mockToken = createMockJWT(payload);
-
-        localStorage.setItem("token", mockToken);
-        setToken(mockToken);
-        const decoded = jwtDecode(mockToken);
-        setUser(decoded);
-        toast.success("Login successful!");
-        return { success: true };
-      }
-
-      throw new Error("Invalid credentials");
-    } catch (error) {
-      toast.error(error.message || "Login failed");
-      return { success: false, error: error.message };
+      toast.success("Login successful!");
+      return { success: true, user: { role: decoded.role } };
+    } catch (err) {
+      const isNetwork = err.code === "ERR_NETWORK" || err.message?.includes("Network");
+      const is503 = err.response?.status === 503;
+      const msg = isNetwork
+        ? "Cannot reach API. Is the backend running at " + (import.meta.env.VITE_API_URL || "http://localhost:8000") + "?"
+        : is503
+          ? (err.response?.data?.detail || "Backend database is unavailable. Check MongoDB connection.")
+          : err.response?.data?.detail || err.message || "Login failed";
+      toast.error(Array.isArray(msg) ? msg[0]?.msg || msg : msg);
+      return { success: false, error: msg };
     }
   };
 
   const signup = async (userData) => {
     try {
-      // Simulate API call - replace with actual API endpoint
-      const payload = {
-        id: Date.now(),
+      const nameParts = (userData.name || "").trim().split(" ");
+      const first_name = nameParts[0] || userData.email?.split("@")[0] || "User";
+      const last_name = nameParts.slice(1).join(" ") || ".";
+      const role =
+        userData.role === "recruiter" ? "recruiter" : "job_seeker";
+      const data = await api.register({
         email: userData.email,
-        role: userData.role || "candidate",
-        exp: Math.floor(Date.now() / 1000) + 86400, // 24 hours in seconds
-      };
-      const mockToken = createMockJWT(payload);
-
-      localStorage.setItem("token", mockToken);
-      setToken(mockToken);
-      const decoded = jwtDecode(mockToken);
-      setUser(decoded);
+        password: userData.password,
+        first_name,
+        last_name,
+        role,
+      });
+      const access = data.access_token;
+      const refresh = data.refresh_token;
+      localStorage.setItem("access_token", access);
+      if (refresh) localStorage.setItem("refresh_token", refresh);
+      localStorage.setItem("token", access);
+      const decoded = jwtDecode(access);
+      setUser({
+        id: decoded.user_id,
+        email: decoded.email,
+        role: decoded.role,
+      });
       toast.success("Signup successful!");
-      return { success: true };
-    } catch (error) {
-      toast.error(error.message || "Signup failed");
-      return { success: false, error: error.message };
+      return { success: true, user: { role: decoded.role } };
+    } catch (err) {
+      const isNetwork = err.code === "ERR_NETWORK" || err.message?.includes("Network");
+      const is503 = err.response?.status === 503;
+      const msg = isNetwork
+        ? "Cannot reach API. Is the backend running?"
+        : is503
+          ? (err.response?.data?.detail || "Backend database is unavailable. Check MongoDB connection.")
+          : err.response?.data?.detail || err.message || "Signup failed";
+      toast.error(Array.isArray(msg) ? msg[0]?.msg || msg : msg);
+      return { success: false, error: msg };
     }
   };
 
   const socialLogin = async (provider) => {
-    try {
-      // Simulate social login - replace with actual OAuth implementation
-      toast.success(`Logging in with ${provider}...`);
-      const payload = {
-        id: Date.now(),
-        email: `user@${provider}.com`,
-        role: "candidate",
-        exp: Math.floor(Date.now() / 1000) + 86400, // 24 hours in seconds
-      };
-      const mockToken = createMockJWT(payload);
-
-      localStorage.setItem("token", mockToken);
-      setToken(mockToken);
-      const decoded = jwtDecode(mockToken);
-      setUser(decoded);
-      return { success: true };
-    } catch (error) {
-      toast.error("Social login failed");
-      return { success: false, error: error.message };
-    }
+    toast.success(`Logging in with ${provider} is not connected to the API yet.`);
+    return { success: false, error: "Use email/password to sign in." };
   };
 
   const otpLogin = async (phone, otp) => {
-    try {
-      // Simulate OTP verification - replace with actual OTP service
-      if (otp === "123456") {
-        const payload = {
-          id: Date.now(),
-          phone,
-          role: "candidate",
-          exp: Math.floor(Date.now() / 1000) + 86400, // 24 hours in seconds
-        };
-        const mockToken = createMockJWT(payload);
-
-        localStorage.setItem("token", mockToken);
-        setToken(mockToken);
-        const decoded = jwtDecode(mockToken);
-        setUser(decoded);
-        toast.success("OTP verified successfully!");
-        return { success: true };
-      }
-      throw new Error("Invalid OTP");
-    } catch (error) {
-      toast.error(error.message || "OTP verification failed");
-      return { success: false, error: error.message };
-    }
+    toast.error("OTP login is not connected to the API. Use email/password.");
+    return { success: false, error: "Use email/password to sign in." };
   };
 
   const logout = () => {
+    api.clearTokens();
     localStorage.removeItem("token");
-    setToken(null);
     setUser(null);
     toast.success("Logged out successfully");
   };
 
   const value = {
     user,
-    token,
+    token: localStorage.getItem("access_token") || localStorage.getItem("token"),
     login,
     signup,
     socialLogin,

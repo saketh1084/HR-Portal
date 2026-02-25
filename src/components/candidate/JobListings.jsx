@@ -25,7 +25,9 @@ import {
   FaExclamationTriangle,
 } from "react-icons/fa";
 import toast from "react-hot-toast";
-import { getAllJobs, getJobsByCategory, getJobCountByCategory, categories } from "../../data/jobs";
+import { useAuth } from "../../context/AuthContext";
+import { getJobs, getApplications, applyToJob, mapJobToCard } from "../../api/client";
+import { categories } from "../../data/jobs";
 
 // Map icon names to actual icon components
 const iconMap = {
@@ -285,55 +287,88 @@ const NoProfileModal = ({ onClose, onGoToProfile }) => (
   </div>
 );
 
+// Filter jobs by category (match title or skills to category label)
+const filterJobsByCategory = (jobsList, categoryId) => {
+  if (!categoryId || categoryId === "all") return jobsList;
+  const label = categories.find((c) => c.id === categoryId)?.label || "";
+  if (!label) return jobsList;
+  const lower = label.toLowerCase();
+  return jobsList.filter(
+    (j) =>
+      (j.title && j.title.toLowerCase().includes(lower)) ||
+      (j.skills && j.skills.some((s) => String(s).toLowerCase().includes(lower)))
+  );
+};
+
+const getJobCountByCategory = (jobsList, categoryId) => {
+  return filterJobsByCategory(jobsList, categoryId).length;
+};
+
 // ============ MAIN COMPONENT ============
 const JobListings = () => {
+  const { user } = useAuth();
+  const [allJobs, setAllJobs] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState("all");
   const [autoApplyEnabled, setAutoApplyEnabled] = useState(false);
   const [appliedJobs, setAppliedJobs] = useState(new Set());
-  const [applyingJob, setApplyingJob] = useState(null); // job being auto-applied to
+  const [applyingJob, setApplyingJob] = useState(null);
   const [showNoProfile, setShowNoProfile] = useState(false);
   const [profile, setProfile] = useState(null);
 
-  // Load applied jobs and profile on mount
+  // Load jobs and applications from API
   useEffect(() => {
-    const applications = JSON.parse(localStorage.getItem("applications") || "[]");
-    const appliedIds = new Set(applications.map((a) => a.jobId));
-    setAppliedJobs(appliedIds);
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([
+      getJobs(0, 100).then((r) => (cancelled ? [] : (r.jobs || r) || [])),
+      user?.id ? getApplications(user.id).then((r) => (cancelled ? [] : r.applications || [])) : Promise.resolve([]),
+    ])
+      .then(([jobList, applications]) => {
+        if (cancelled) return;
+        const mapped = (Array.isArray(jobList) ? jobList : []).map((j) => mapJobToCard(j));
+        setAllJobs(mapped);
+        const appliedIds = new Set((applications || []).map((a) => a.job_id));
+        setAppliedJobs(appliedIds);
+      })
+      .catch(() => {
+        if (!cancelled) setAllJobs([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [user?.id]);
 
+  useEffect(() => {
+    setJobs(filterJobsByCategory(allJobs, activeCategory));
+  }, [activeCategory, allJobs]);
+
+  // Load profile and auto-apply preference from localStorage
+  useEffect(() => {
     const savedProfile = localStorage.getItem("userProfile");
     if (savedProfile) {
-      setProfile(JSON.parse(savedProfile));
+      try {
+        setProfile(JSON.parse(savedProfile));
+      } catch {
+        setProfile(null);
+      }
     } else {
-      // Use default profile data
       setProfile({
-        fullName: "Pujitha Kamatam",
-        headline: "Full Stack Developer | React | Node.js",
-        email: "pujitha@email.com",
-        phone: "+1 (555) 123-4567",
-        location: "San Francisco, CA",
-        skills: ["React", "JavaScript", "TypeScript", "Node.js", "Python", "MongoDB", "PostgreSQL", "AWS", "Docker", "Git", "Tailwind CSS", "GraphQL"],
-        experience: [
-          { company: "Tech Solutions Inc.", position: "Senior Frontend Developer", duration: "Jan 2023 - Present" },
-        ],
-        experienceLevel: "senior",
+        fullName: user?.email?.split("@")[0] || "User",
+        headline: "",
+        email: user?.email || "",
+        phone: "",
+        location: "",
+        skills: [],
+        experience: [],
+        experienceLevel: "",
       });
     }
-
-    // Load auto-apply preference
     const saved = localStorage.getItem("autoApplyEnabled");
     if (saved === "true") setAutoApplyEnabled(true);
-  }, []);
-
-  useEffect(() => {
-    setLoading(true);
-    setTimeout(() => {
-      const filteredJobs = getJobsByCategory(activeCategory);
-      setJobs(filteredJobs);
-      setLoading(false);
-    }, 400);
-  }, [activeCategory]);
+  }, [user?.email]);
 
   const handleCategoryClick = (categoryId) => {
     setActiveCategory(categoryId);
@@ -364,12 +399,11 @@ const JobListings = () => {
       toast("Already applied to this job!", { icon: "ℹ️" });
       return;
     }
-
-    if (autoApplyEnabled) {
-      // Show auto-apply confirmation modal
+    if (autoApplyEnabled && profile?.fullName) {
       setApplyingJob(job);
+    } else if (autoApplyEnabled) {
+      setShowNoProfile(true);
     } else {
-      // Manual apply (simple version)
       toast("Enable Auto Apply to instantly apply with your profile!", {
         icon: "💡",
         duration: 3000,
@@ -377,39 +411,20 @@ const JobListings = () => {
     }
   };
 
-  const confirmAutoApply = () => {
+  const confirmAutoApply = async () => {
     if (!applyingJob) return;
-
-    // Save application to localStorage
-    const applications = JSON.parse(localStorage.getItem("applications") || "[]");
-    const newApplication = {
-      id: Date.now(),
-      jobId: applyingJob.id,
-      jobTitle: applyingJob.title,
-      company: applyingJob.company,
-      location: applyingJob.location,
-      category: applyingJob.category,
-      salary: applyingJob.salary,
-      appliedAt: new Date().toISOString(),
-      status: "applied",
-      autoApplied: true,
-      profileSnapshot: {
-        fullName: profile.fullName,
-        email: profile.email,
-        phone: profile.phone,
-        skills: profile.skills,
-      },
-    };
-    applications.push(newApplication);
-    localStorage.setItem("applications", JSON.stringify(applications));
-
-    // Update applied jobs set
-    setAppliedJobs((prev) => new Set([...prev, applyingJob.id]));
-
-    toast.success(`Applied to ${applyingJob.title} at ${applyingJob.company}!`, {
-      duration: 4000,
-    });
-
+    const coverLetter = profile?.headline
+      ? `I am ${profile.fullName}. ${profile.headline}`
+      : "";
+    try {
+      await applyToJob(applyingJob.id, coverLetter);
+      setAppliedJobs((prev) => new Set([...prev, applyingJob.id]));
+      toast.success(`Applied to ${applyingJob.title} at ${applyingJob.company}!`, {
+        duration: 4000,
+      });
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Failed to submit application");
+    }
     setApplyingJob(null);
   };
 
@@ -523,7 +538,7 @@ const JobListings = () => {
             const isActive = activeCategory === cat.id;
             const Icon = iconMap[cat.icon];
             const style = colorStyles[cat.color];
-            const jobCount = getJobCountByCategory(cat.id);
+            const jobCount = getJobCountByCategory(allJobs, cat.id);
 
             return (
               <button

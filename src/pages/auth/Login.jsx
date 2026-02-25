@@ -23,9 +23,8 @@ const Login = () => {
     e.preventDefault();
     const result = await login(email, password);
     if (result.success) {
-      // Navigate based on user role
-      const isAdmin = email.includes("admin");
-      navigate(isAdmin ? "/admin" : "/candidate");
+      const role = result.user?.role || (email.includes("admin") ? "admin" : "job_seeker");
+      navigate(role === "admin" ? "/admin" : "/candidate");
     }
   };
 
