@@ -26,6 +26,8 @@ import {
 } from "react-icons/fa";
 import toast from "react-hot-toast";
 
+// Accessibility: Add ARIA attributes and semantic HTML where possible
+
 // Default profile data (used when no saved profile exists)
 const defaultProfile = {
   fullName: "Pujitha Kamatam",
@@ -117,6 +119,9 @@ const ProfilePage = () => {
   const [editHeadline, setEditHeadline] = useState("");
   const [showAllSkills, setShowAllSkills] = useState(false);
   const [showAllExp, setShowAllExp] = useState(false);
+
+  // Accessibility: Use semantic HTML and ARIA roles for main sections
+  // Example: <main role="main">, <section aria-labelledby="profile-heading">
 
   useEffect(() => {
     // Load profile from localStorage or use default

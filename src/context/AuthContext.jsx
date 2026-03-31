@@ -3,6 +3,8 @@ import { jwtDecode } from "jwt-decode";
 import toast from "react-hot-toast";
 import * as api from "../api/client";
 
+// AuthContext manages authentication state and actions for the app
+
 const AuthContext = createContext();
 
 export const useAuth = () => {
@@ -16,14 +18,17 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  // Only use access_token for security; fallback to token if needed
   const token = localStorage.getItem("access_token") || localStorage.getItem("token");
 
   useEffect(() => {
+    // Validate token and decode user info
     if (token) {
       try {
         if (token.split(".").length === 3) {
           const decoded = jwtDecode(token);
           if (decoded.exp && decoded.exp * 1000 < Date.now()) {
+            // Token expired, clear all
             localStorage.removeItem("access_token");
             localStorage.removeItem("refresh_token");
             localStorage.removeItem("token");
@@ -36,12 +41,14 @@ export const AuthProvider = ({ children }) => {
             });
           }
         } else {
+          // Invalid token format
           localStorage.removeItem("access_token");
           localStorage.removeItem("refresh_token");
           localStorage.removeItem("token");
           setUser(null);
         }
-      } catch {
+      } catch (e) {
+        // Decoding failed
         localStorage.removeItem("access_token");
         localStorage.removeItem("refresh_token");
         localStorage.removeItem("token");
@@ -53,6 +60,7 @@ export const AuthProvider = ({ children }) => {
     setLoading(false);
   }, [token]);
 
+  // Login with email/password
   const login = async (email, password) => {
     try {
       const data = await api.login(email, password);
@@ -70,6 +78,7 @@ export const AuthProvider = ({ children }) => {
       toast.success("Login successful!");
       return { success: true, user: { role: decoded.role } };
     } catch (err) {
+      // Improved error handling
       const isNetwork = err.code === "ERR_NETWORK" || err.message?.includes("Network");
       const is503 = err.response?.status === 503;
       const msg = isNetwork
@@ -82,6 +91,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Signup/register new user
   const signup = async (userData) => {
     try {
       const nameParts = (userData.name || "").trim().split(" ");
@@ -110,6 +120,7 @@ export const AuthProvider = ({ children }) => {
       toast.success("Signup successful!");
       return { success: true, user: { role: decoded.role } };
     } catch (err) {
+      // Improved error handling
       const isNetwork = err.code === "ERR_NETWORK" || err.message?.includes("Network");
       const is503 = err.response?.status === 503;
       const msg = isNetwork
@@ -122,16 +133,19 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Social login placeholder
   const socialLogin = async (provider) => {
     toast.success(`Logging in with ${provider} is not connected to the API yet.`);
     return { success: false, error: "Use email/password to sign in." };
   };
 
+  // OTP login placeholder
   const otpLogin = async (phone, otp) => {
     toast.error("OTP login is not connected to the API. Use email/password.");
     return { success: false, error: "Use email/password to sign in." };
   };
 
+  // Logout user and clear tokens
   const logout = () => {
     api.clearTokens();
     localStorage.removeItem("token");
@@ -139,6 +153,7 @@ export const AuthProvider = ({ children }) => {
     toast.success("Logged out successfully");
   };
 
+  // Context value for consumers
   const value = {
     user,
     token: localStorage.getItem("access_token") || localStorage.getItem("token"),

@@ -19,16 +19,29 @@ const Signup = () => {
   }
 
   const handleSubmit = async (e) => {
-    e.preventDefault()
+    e.preventDefault();
+    // Input validation
+    if (!formData.name.trim()) {
+      alert('Name is required');
+      return;
+    }
+    if (!formData.email.match(/^\S+@\S+\.\S+$/)) {
+      alert('Enter a valid email address');
+      return;
+    }
+    if (formData.password.length < 8) {
+      alert('Password must be at least 8 characters');
+      return;
+    }
     if (formData.password !== formData.confirmPassword) {
-      alert('Passwords do not match')
-      return
+      alert('Passwords do not match');
+      return;
     }
-    const result = await signup(formData)
+    const result = await signup(formData);
     if (result.success) {
-      navigate('/profile-creation')
+      navigate('/profile-creation');
     }
-  }
+  };
 
   const handleSocialLogin = async (provider) => {
     const result = await socialLogin(provider)

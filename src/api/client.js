@@ -1,7 +1,9 @@
 import axios from "axios";
 
+// API base URL from environment or fallback
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+// Token helpers
 const getAccessToken = () => localStorage.getItem("access_token");
 const getRefreshToken = () => localStorage.getItem("refresh_token");
 const setTokens = (access, refresh) => {
@@ -13,17 +15,20 @@ const clearTokens = () => {
   localStorage.removeItem("refresh_token");
 };
 
+// Axios client instance
 const client = axios.create({
   baseURL: API_BASE,
   headers: { "Content-Type": "application/json" },
 });
 
+// Attach access token to requests
 client.interceptors.request.use((config) => {
   const token = getAccessToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
+// Handle token refresh and errors
 let refreshing = null;
 client.interceptors.response.use(
   (res) => res,
@@ -60,12 +65,22 @@ client.interceptors.response.use(
         return Promise.reject(e);
       }
     }
+    // Improved error logging for debugging
+    if (err.response) {
+      // Log API errors for development
+      // eslint-disable-next-line no-console
+      console.error("API Error:", err.response.status, err.response.data);
+    } else if (err.request) {
+      // eslint-disable-next-line no-console
+      console.error("Network Error:", err.message);
+    }
     return Promise.reject(err);
   }
 );
 
 // Map backend job to frontend card shape
 export function mapJobToCard(job, companyName = "Company") {
+  // Defensive mapping for job card
   const salaryMin = job.salary_min != null ? job.salary_min : 0;
   const salaryMax = job.salary_max != null ? job.salary_max : 0;
   const salaryStr =
